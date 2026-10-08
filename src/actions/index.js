@@ -166,10 +166,10 @@ export function closePage() {
 }
 
 // Dialog targets are independent of the selected device and underlying page.
-export function openDialog(dialog, dongleId) {
+export function openDialog(dialog, dongleId, clipFilename) {
   return (dispatch, getState) => {
     const state = getState();
-    dispatch(navigate(dialogUrl(state.router.location, dialog, dongleId ?? state.dongleId)));
+    dispatch(navigate(dialogUrl(state.router.location, dialog, dongleId ?? state.dongleId, clipFilename)));
   };
 }
 

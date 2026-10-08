@@ -41,6 +41,7 @@ describe('navigation actions', () => {
     ['the dashboard', closePage(), '/dongle/prime', '/dongle'],
     ['settings over a drive', openDialog(DIALOGS.SETTINGS), '/dongle/log', '/dongle/log?dialog=settings&device=dongle'],
     ['settings for another device', openDialog(DIALOGS.SETTINGS, 'other'), '/dongle/log', '/dongle/log?dialog=settings&device=other'],
+    ['a clip viewer', openDialog(DIALOGS.CLIP_VIEWER, null, 'road.mp4'), '/dongle/log?dialog=clips', '/dongle/log?dialog=clip-viewer&filename=road.mp4'],
     ['the page under a dialog', closeDialog(), '/dongle/log?dialog=settings', '/dongle/log'],
   ])('navigates to %s', (_name, thunk, from, expected) => {
     run(thunk, { dongleId: 'dongle', router: router(from) });

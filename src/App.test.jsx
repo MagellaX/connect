@@ -7,6 +7,7 @@ import App from './App';
 import { createInitialState } from './initialState';
 import { createAppStore } from './store';
 import { api } from './api/backend';
+import { clipDevice } from './api/clips';
 
 const mocks = vi.hoisted(() => ({ authenticated: true, options: {}, requests: [], hardNavigate: vi.fn() }));
 
@@ -56,6 +57,15 @@ vi.mock('react-player/file', () => ({
   }),
 }));
 vi.mock('barcode-detector/ponyfill', () => ({ BarcodeDetector: class { detect() { return []; } } }));
+vi.mock('./api/clips', () => ({
+  deviceSupportsClips: vi.fn(async () => Boolean(mocks.options.clipsSupported)),
+  clipDevice: {
+    getClipState: vi.fn(async () => ({ clips: [] })),
+    hasClipBlob: vi.fn(async () => false),
+    getClipUrl: vi.fn(async () => 'blob:clip'),
+    deleteClip: vi.fn(),
+  },
+}));
 
 const FIRST = 'aaaaaaaaaaaaaaaa';
 const SECOND = 'bbbbbbbbbbbbbbbb';
@@ -117,6 +127,7 @@ async function mockFetch(input, init = {}) {
   if (url.pathname.endsWith('/stats')) return json(null);
   if (/^\/v1\.1\/devices\/[a-f0-9]{16}\/$/.test(url.pathname)) {
     const dongleId = url.pathname.split('/')[3];
+    if (options.clipsSupported) return json(deviceList.find(device => device.dongle_id === dongleId));
     return json({ alias: 'Shared device', dongle_id: dongleId, device_type: 'threex', is_owner: false, prime: false });
   }
   if (url.pathname.endsWith('/subscription')) return json(options.subscription ?? null);
@@ -165,6 +176,9 @@ describe('whole-app behavior', () => {
   });
   afterEach(() => {
     vi.restoreAllMocks();
+    clipDevice.getClipState.mockClear().mockResolvedValue({ clips: [] });
+    clipDevice.getClipUrl.mockClear().mockResolvedValue('blob:clip');
+    clipDevice.deleteClip.mockClear().mockResolvedValue(null);
     localStorage.clear();
     sessionStorage.clear();
     mocks.hardNavigate.mockClear();
@@ -219,6 +233,63 @@ describe('whole-app behavior', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filter' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(mocks.requests.some(({ url }) => url.includes('routes_segments'))).toBe(true);
+  });
+
+  test('dashboard clips open through the URL and browser Back closes the menu', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const device = { ...devices[0], last_athena_ping: now, fetched_at: now };
+    const app = await renderApp(`/${FIRST}`, { devices: [device], clipsSupported: true });
+    const button = await screen.findByRole('button', { name: 'Clips' });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(app.history.location.search).toBe('?dialog=clips'));
+    expect(await screen.findByText('CLIPS ON THIS DEVICE')).toBeVisible();
+    act(() => app.history.goBack());
+    await waitFor(() => expect(app.history.location.search).toBe(''));
+    await waitFor(() => expect(screen.queryByText('CLIPS ON THIS DEVICE')).not.toBeInTheDocument());
+    expect(clipDevice.getClipState).toHaveBeenCalledWith(FIRST, {});
+  });
+
+  test('a cold drive clip link keeps its drive underneath the menu', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const device = { ...devices[0], last_athena_ping: now, fetched_at: now };
+    const app = await renderApp(`/${FIRST}/${LOG}?dialog=clips`, { devices: [device], clipsSupported: true });
+    expect(await screen.findByText('CLIPS ON THIS DEVICE')).toBeVisible();
+    expect(app.store.getState().selectedRouteId).toBe(LOG);
+    expect(clipDevice.getClipState).toHaveBeenCalledWith(FIRST, { route: `${FIRST}|${LOG}` });
+  });
+
+  test('clip viewer and deletion confirmation follow browser history without deleting on entry', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const device = { ...devices[0], last_athena_ping: now, fetched_at: now };
+    const clip = {
+      filename: 'road.mp4', status: 'ready', requested_at: 1, route: LOG, camera: 'fcamera.hevc',
+      source_start_time: 0, source_end_time: 10, speedup: 1,
+    };
+    clipDevice.getClipState.mockResolvedValue({ clips: [clip] });
+    URL.revokeObjectURL = vi.fn();
+    const app = await renderApp(`/${FIRST}?dialog=clips`, { devices: [device], clipsSupported: true });
+    const play = await screen.findByRole('button', { name: 'Download clip' });
+    fireEvent.click(play);
+    await waitFor(() => expect(app.history.location.search).toBe('?dialog=clip-viewer&filename=road.mp4'));
+    expect(await screen.findByRole('button', { name: 'Close video' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Close video' }));
+    await waitFor(() => expect(app.history.location.search).toBe('?dialog=clips'));
+    act(() => app.history.push(`/${FIRST}?dialog=clip-delete&filename=road.mp4`));
+    await waitFor(() => expect(app.history.location.search).toBe('?dialog=clip-delete&filename=road.mp4'));
+    expect(clipDevice.deleteClip).not.toHaveBeenCalled();
+    expect(await screen.findByText('road will be permanently deleted from your comma device.')).toBeVisible();
+    act(() => app.history.goBack());
+    await waitFor(() => expect(app.history.location.search).toBe('?dialog=clips'));
+    expect(clipDevice.deleteClip).not.toHaveBeenCalled();
+  });
+
+  test.each([`/${SHARED}`, `/${SHARED}/${LOG}`])('a shared-device clip link cannot call owner-only APIs on %s', async (path) => {
+    const shared = { alias: 'Shared device', dongle_id: SHARED, device_type: 'threex', is_owner: false, prime: false };
+    clipDevice.getClipState.mockClear();
+    await renderApp(`${path}?dialog=clips`, { devices: [...devices, shared], clipsSupported: true });
+    expect(screen.queryByText('CLIPS ON THIS DEVICE')).not.toBeInTheDocument();
+    expect(clipDevice.getClipState).not.toHaveBeenCalled();
   });
 
   test.each([

@@ -20,9 +20,14 @@ export const DIALOGS = {
   UPLOADS: 'uploads',
   CANCEL_PRIME: 'cancel-prime',
   SWITCH_PRIME: 'switch-prime',
+  CLIPS: 'clips',
+  CLIP_VIEWER: 'clip-viewer',
+  CLIP_DELETE: 'clip-delete',
 };
 const SETTINGS_DIALOGS = [DIALOGS.SETTINGS, DIALOGS.UNPAIR, DIALOGS.SETTINGS_UPLOADS];
+const CLIP_DIALOGS = [DIALOGS.CLIPS, DIALOGS.CLIP_VIEWER, DIALOGS.CLIP_DELETE];
 const DEVICE_ID = /^[a-f0-9]{16}$/;
+const CLIP_FILENAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$/;
 const DONGLE_ID = ':dongleId([a-f0-9]{16})';
 const LOG_ID = ':logId([a-f0-9-]{20})';
 
@@ -48,6 +53,9 @@ const DIALOG_PAGES = {
   [DIALOGS.UPLOADS]: [PAGES.DRIVE],
   [DIALOGS.CANCEL_PRIME]: [PAGES.PRIME],
   [DIALOGS.SWITCH_PRIME]: [PAGES.PRIME],
+  [DIALOGS.CLIPS]: [PAGES.DASHBOARD, PAGES.DRIVE],
+  [DIALOGS.CLIP_VIEWER]: [PAGES.DASHBOARD, PAGES.DRIVE],
+  [DIALOGS.CLIP_DELETE]: [PAGES.DASHBOARD, PAGES.DRIVE],
 };
 
 function parseRange(start, end, scale) {
@@ -79,15 +87,22 @@ function parsePath(pathname) {
 }
 
 function parseDialog(search, { page, dongleId }) {
-  const closed = { dialog: null, dialogDevice: null };
+  const closed = { dialog: null, dialogDevice: null, dialogClipFilename: null };
   const query = new URLSearchParams(search);
   const dialog = query.get('dialog');
   if (query.getAll('dialog').length !== 1 || !Object.hasOwn(DIALOG_PAGES, dialog)) return closed;
   if (!DIALOG_PAGES[dialog].includes(page)) return closed;
-  if (!SETTINGS_DIALOGS.includes(dialog)) return { dialog, dialogDevice: null };
+  if (CLIP_DIALOGS.includes(dialog)) {
+    const filename = query.get('filename');
+    const targeted = dialog !== DIALOGS.CLIPS;
+    if (targeted && (query.getAll('filename').length !== 1 || !CLIP_FILENAME.test(filename))) return closed;
+    if (!targeted && query.has('filename')) return closed;
+    return { dialog, dialogDevice: null, dialogClipFilename: targeted ? filename : null };
+  }
+  if (!SETTINGS_DIALOGS.includes(dialog)) return { ...closed, dialog };
   const dialogDevice = query.get('device') || dongleId;
   if (query.getAll('device').length > 1 || !DEVICE_ID.test(dialogDevice)) return closed;
-  return { dialog, dialogDevice };
+  return { ...closed, dialog, dialogDevice };
 }
 
 export function parseUrl(pathname, search = '') {
@@ -108,12 +123,14 @@ export function urlFor({ dongleId = null, page = null, logId = null, zoom = null
   return `/${parts.join('/')}`;
 }
 
-export function dialogUrl({ pathname, search = '', hash = '' }, dialog, device) {
+export function dialogUrl({ pathname, search = '', hash = '' }, dialog, device, clipFilename) {
   const query = new URLSearchParams(search);
   query.delete('dialog');
   query.delete('device');
+  query.delete('filename');
   if (dialog) query.set('dialog', dialog);
   if (dialog && SETTINGS_DIALOGS.includes(dialog) && device) query.set('device', device);
+  if (dialog && CLIP_DIALOGS.includes(dialog) && clipFilename) query.set('filename', clipFilename);
   return `${pathname}${query.size ? `?${query}` : ''}${hash}`;
 }
 

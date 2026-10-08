@@ -7,8 +7,8 @@ import { withStyles, Typography, CircularProgress, Popper, Tooltip } from '@mate
 
 import { athena as Athena } from '../../api';
 import { deviceSupportsClips } from '../../api/clips';
-import { analyticsEvent, openPage, fetchDeviceNotCar } from '../../actions';
-import { PAGES } from '../../url';
+import { analyticsEvent, closeDialog, openDialog, openPage, fetchDeviceNotCar } from '../../actions';
+import { DIALOGS, PAGES, selectUrl } from '../../url';
 import Colors from '../../colors';
 import { deviceNamePretty, deviceIsOnline, deviceVersionAtLeast, truncateName } from '../../utils';
 import { webrtcConnectionManager } from '../../utils/webrtc';
@@ -154,11 +154,11 @@ class DeviceInfo extends Component {
       snapshot: {},
       windowWidth: window.innerWidth,
       bodyTeleopOpen: false,
-      clipMenu: null,
       clipsSupported: false,
     };
 
     this.snapshotButtonRef = React.createRef();
+    this.clipButtonRef = React.createRef();
 
     this.onVisible = this.onVisible.bind(this);
     this.fetchDeviceCarHealth = this.fetchDeviceCarHealth.bind(this);
@@ -191,11 +191,12 @@ class DeviceInfo extends Component {
         carHealth: {},
         snapshot: {},
         windowWidth: window.innerWidth,
-        clipMenu: null,
         clipsSupported: false,
       });
       this.checkClipsSupport();
-    } else if (!deviceIsOnline(prevProps.device) && deviceIsOnline(this.props.device)) {
+    } else if ((!deviceIsOnline(prevProps.device) && deviceIsOnline(this.props.device))
+      || (!prevProps.profile?.superuser && this.props.profile?.superuser)
+      || (!prevProps.device?.is_owner && this.props.device?.is_owner)) {
       this.checkClipsSupport();
     }
 
@@ -209,6 +210,7 @@ class DeviceInfo extends Component {
 
   async checkClipsSupport() {
     const { device, dongleId } = this.props;
+    if (!device?.is_owner && !this.props.profile?.superuser) return;
     try {
       const clipsSupported = await deviceSupportsClips(device);
       if (this.mounted && dongleId === this.props.dongleId) this.setState({ clipsSupported });
@@ -330,15 +332,20 @@ class DeviceInfo extends Component {
             { this.renderButtons() }
           </div>
         </div>
-        <ClipMenu
-          open={Boolean(this.state.clipMenu)}
+        {(device?.is_owner || this.props.profile?.superuser) && <ClipMenu
+          open={[DIALOGS.CLIPS, DIALOGS.CLIP_VIEWER, DIALOGS.CLIP_DELETE].includes(this.props.clipDialog)}
+          dialog={this.props.clipDialog}
+          clipFilename={this.props.clipFilename}
           dongleId={this.props.dongleId}
-          anchorEl={this.state.clipMenu}
-          onClose={() => this.setState({ clipMenu: null })}
+          anchorEl={this.clipButtonRef.current}
+          onClose={() => this.props.dispatch(closeDialog())}
+          onCloseChild={() => this.props.dispatch(openDialog(DIALOGS.CLIPS))}
+          onOpenViewer={filename => this.props.dispatch(openDialog(DIALOGS.CLIP_VIEWER, null, filename))}
+          onOpenDelete={filename => this.props.dispatch(openDialog(DIALOGS.CLIP_DELETE, null, filename))}
           routes={this.props.routes}
           deviceOnline={deviceIsOnline(device)}
           inventoryOnly
-        />
+        />}
         { snapshot.result && (
           <div className={ classes.snapshotContainer }>
             { windowWidth >= 640
@@ -405,16 +412,17 @@ class DeviceInfo extends Component {
 
     return (
       <div className='flex md:flex-row md:items-stretch justify-end flex-wrap gap-2 min-w-0 shrink'>
-        {clipsSupported && <Tooltip
+        {clipsSupported && (device?.is_owner || this.props.profile?.superuser) && <Tooltip
           classes={{ tooltip: classes.popover }}
           title={offline ? 'Device offline' : 'Clips'}
           placement="bottom"
         >
           <span className="inline-flex">
             <button
+              ref={this.clipButtonRef}
               className={`${classes.button} ${classes.carBattery}`}
               aria-label="Clips"
-              onClick={(event) => this.setState({ clipMenu: event.currentTarget })}
+              onClick={() => this.props.dispatch(openDialog(DIALOGS.CLIPS))}
               disabled={offline}
             >
               <ContentCut />
@@ -515,8 +523,11 @@ class DeviceInfo extends Component {
 }
 
 const stateToProps = (state) => ({
+  clipDialog: selectUrl(state).dialog,
+  clipFilename: selectUrl(state).dialogClipFilename,
   dongleId: state.dongleId,
   device: state.device,
+  profile: state.profile,
   routes: state.routes,
 });
 

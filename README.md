@@ -45,8 +45,12 @@ use the same backend.
 
 Dialogs overlay their current page with `?dialog=...`. Settings, unpair, and settings
 uploads can also specify `&device=<dongleId>`, independently of the underlying drive.
-Other dialog names are `add-device`, `filter`, `uploads`, `cancel-prime`, and
-`switch-prime`. Opening a dialog never performs its destructive or billing action.
+Other dialog names are `add-device`, `filter`, `uploads`, `cancel-prime`,
+`switch-prime`, and `clips`. A clip can be opened with
+`?dialog=clip-viewer&filename=<clip.mp4>` or selected for deletion with
+`?dialog=clip-delete&filename=<clip.mp4>` on a device or drive page. The clip
+must exist on that device; opening a deletion link only shows confirmation.
+Opening a dialog never performs its destructive or billing action.
 Dialog close works from a cold link, and browser Back/Forward restores the overlay.
 
 Drive ranges are seconds in the URL, with up to three decimal places, and integer

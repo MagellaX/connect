@@ -207,7 +207,6 @@ class Media extends Component {
       inView: MediaType.VIDEO,
       windowWidth: window.innerWidth,
       downloadMenu: null,
-      clipMenu: null,
       moreInfoMenu: null,
       dcamUploadInfo: null,
       routePreserved: null,
@@ -234,6 +233,7 @@ class Media extends Component {
     this.onPreserveToggle = this.onPreserveToggle.bind(this);
 
     this.routeViewed = false;
+    this.clipButtonRef = React.createRef();
   }
 
   handleMuteToggle() {
@@ -256,9 +256,11 @@ class Media extends Component {
     const { windowWidth, inView, downloadMenu, moreInfoMenu, routePreserved } = this.state;
     const showMapAlways = windowWidth >= 1536;
     if (prevProps.dongleId !== this.props.dongleId) {
-      this.setState({ clipsSupported: false, clipMenu: null });
+      this.setState({ clipsSupported: false });
       this.checkClipsSupport();
-    } else if (!deviceIsOnline(prevProps.device) && deviceIsOnline(this.props.device)) {
+    } else if ((!deviceIsOnline(prevProps.device) && deviceIsOnline(this.props.device))
+      || (!prevProps.profile?.superuser && this.props.profile?.superuser)
+      || (!prevProps.device?.is_owner && this.props.device?.is_owner)) {
       this.checkClipsSupport();
     }
     if (showMapAlways && inView === MediaType.MAP) {
@@ -304,6 +306,7 @@ class Media extends Component {
 
   async checkClipsSupport() {
     const { device, dongleId } = this.props;
+    if (!device?.is_owner && !this.props.profile?.superuser) return;
     try {
       const clipsSupported = await deviceSupportsClips(device);
       if (this.mounted && dongleId === this.props.dongleId) this.setState({ clipsSupported });
@@ -604,12 +607,13 @@ class Media extends Component {
             </div>
           )}
           <div className={`${classes.mediaOptions} ml-auto`}>
-            {clipsSupported && <Tooltip title={deviceIsOnline(device) ? '' : 'Device offline'} placement="top">
+            {clipsSupported && (device?.is_owner || this.props.profile?.superuser) && <Tooltip title={deviceIsOnline(device) ? '' : 'Device offline'} placement="top">
               <div
+                ref={this.clipButtonRef}
                 className={classes.mediaOption}
                 style={deviceIsOnline(device) ? {} : { opacity: 0.7 }}
                 aria-haspopup="true"
-                onClick={(ev) => deviceIsOnline(device) && this.setState({ clipMenu: ev.currentTarget })}
+                onClick={() => deviceIsOnline(device) && this.props.dispatch(openDialog(DIALOGS.CLIPS))}
               >
                 <Typography className={classes.mediaOptionText}>Clip</Typography>
               </div>
@@ -638,7 +642,7 @@ class Media extends Component {
   renderMenus(alwaysOpen = false) {
     const { currentRoute, device, classes, files, profile } = this.props;
     const { uploadModal } = this.props;
-    const { downloadMenu, clipMenu, moreInfoMenu, windowWidth, dcamUploadInfo, routePreserved } = this.state;
+    const { downloadMenu, moreInfoMenu, windowWidth, dcamUploadInfo, routePreserved } = this.state;
 
     if (!device) {
       return null;
@@ -669,16 +673,21 @@ class Media extends Component {
 
     return (
       <>
-        <ClipMenu
-          open={Boolean(alwaysOpen || clipMenu)}
+        {canUpload && <ClipMenu
+          open={Boolean(alwaysOpen || [DIALOGS.CLIPS, DIALOGS.CLIP_VIEWER, DIALOGS.CLIP_DELETE].includes(this.props.clipDialog))}
+          dialog={alwaysOpen ? DIALOGS.CLIPS : this.props.clipDialog}
+          clipFilename={this.props.clipFilename}
           dongleId={this.props.dongleId}
-          anchorEl={clipMenu}
-          onClose={() => this.setState({ clipMenu: null })}
+          anchorEl={this.clipButtonRef.current}
+          onClose={() => this.props.dispatch(closeDialog())}
+          onCloseChild={() => this.props.dispatch(openDialog(DIALOGS.CLIPS))}
+          onOpenViewer={filename => this.props.dispatch(openDialog(DIALOGS.CLIP_VIEWER, null, filename))}
+          onOpenDelete={filename => this.props.dispatch(openDialog(DIALOGS.CLIP_DELETE, null, filename))}
           route={currentRoute}
           routes={this.props.routes}
           zoom={this.props.zoom}
           deviceOnline={deviceIsOnline(device)}
-        />
+        />}
         <Menu
           id="menu-download"
           open={ Boolean(alwaysOpen || downloadMenu) }
@@ -922,6 +931,8 @@ class Media extends Component {
 
 const stateToProps = (state) => ({
   uploadModal: selectUrl(state).dialog === DIALOGS.UPLOADS,
+  clipDialog: selectUrl(state).dialog,
+  clipFilename: selectUrl(state).dialogClipFilename,
   dongleId: state.dongleId,
   device: state.device,
   routes: state.routes,

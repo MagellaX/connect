@@ -47,6 +47,7 @@ describe('URL contract', () => {
     [DIALOGS.SETTINGS, DRIVE], [DIALOGS.UNPAIR, DRIVE], [DIALOGS.SETTINGS_UPLOADS, DRIVE],
     [DIALOGS.ADD_DEVICE, '/'], [DIALOGS.FILTER, `/${DONGLE}`], [DIALOGS.UPLOADS, DRIVE],
     [DIALOGS.CANCEL_PRIME, `/${DONGLE}/prime`], [DIALOGS.SWITCH_PRIME, `/${DONGLE}/prime`],
+    [DIALOGS.CLIPS, `/${DONGLE}`], [DIALOGS.CLIPS, DRIVE],
   ])('opens %s on its page', (dialog, path) => {
     expect(parseUrl(path, `?dialog=${dialog}`).dialog).toBe(dialog);
   });
@@ -68,6 +69,27 @@ describe('URL contract', () => {
   it('changes only dialog query parameters', () => {
     const location = { pathname: DRIVE, search: '?keep=yes&dialog=settings&device=old', hash: '#position' };
     expect(dialogUrl(location, DIALOGS.SETTINGS, OTHER)).toBe(`${DRIVE}?keep=yes&dialog=settings&device=${OTHER}#position`);
+    expect(dialogUrl(location, null)).toBe(`${DRIVE}?keep=yes#position`);
+  });
+
+  it('parses clip viewer and delete links only with one safe filename', () => {
+    for (const dialog of [DIALOGS.CLIP_VIEWER, DIALOGS.CLIP_DELETE]) {
+      expect(parseUrl(DRIVE, `?dialog=${dialog}&filename=road_clip.mp4`))
+        .toMatchObject({ dialog, dialogClipFilename: 'road_clip.mp4' });
+      for (const search of [
+        `?dialog=${dialog}`, `?dialog=${dialog}&filename=..%2Fsecret`,
+        `?dialog=${dialog}&filename=one.mp4&filename=two.mp4`,
+      ]) expect(parseUrl(DRIVE, search).dialog).toBeNull();
+    }
+    expect(parseUrl(DRIVE, '?dialog=clips&filename=one.mp4').dialog).toBeNull();
+    expect(parseUrl(`/${DONGLE}/prime`, '?dialog=clips').dialog).toBeNull();
+  });
+
+  it('replaces clip targets without losing unrelated URL parameters', () => {
+    const location = { pathname: DRIVE, search: '?keep=yes&dialog=clip-viewer&filename=one.mp4', hash: '#position' };
+    expect(dialogUrl(location, DIALOGS.CLIP_DELETE, null, 'two.mp4'))
+      .toBe(`${DRIVE}?keep=yes&dialog=clip-delete&filename=two.mp4#position`);
+    expect(dialogUrl(location, DIALOGS.CLIPS)).toBe(`${DRIVE}?keep=yes&dialog=clips#position`);
     expect(dialogUrl(location, null)).toBe(`${DRIVE}?keep=yes#position`);
   });
 
