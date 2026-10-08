@@ -27,7 +27,7 @@ export const DIALOGS = {
 const SETTINGS_DIALOGS = [DIALOGS.SETTINGS, DIALOGS.UNPAIR, DIALOGS.SETTINGS_UPLOADS];
 const CLIP_DIALOGS = [DIALOGS.CLIPS, DIALOGS.CLIP_VIEWER, DIALOGS.CLIP_DELETE];
 const DEVICE_ID = /^[a-f0-9]{16}$/;
-const CLIP_FILENAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$/;
+const CLIP_FILENAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const DONGLE_ID = ':dongleId([a-f0-9]{16})';
 const LOG_ID = ':logId([a-f0-9-]{20})';
 
