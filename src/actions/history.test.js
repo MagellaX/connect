@@ -3,19 +3,24 @@ import { LOCATION_CHANGE, replace } from 'connected-react-router';
 import { drives as Drives } from '../api';
 import { onHistoryMiddleware } from './history';
 import * as actions from './index';
+import { hardNavigate } from '../utils/navigation';
 
 vi.mock('../api', () => ({ account: {}, auth: {}, billing: {}, devices: {}, drives: { getRoutesSegments: vi.fn() }, raw: {}, video: {} }));
 vi.mock('./index', () => ({ setDevice: vi.fn(), selectRoute: vi.fn(), checkRoutesData: vi.fn() }));
+vi.mock('../utils/navigation', () => ({ hardNavigate: vi.fn() }));
 const DONGLE = '0000aaaa0000aaaa';
 const LOG = '2026-08-06--12-00-00';
 const LEGACY = `/${DONGLE}/1000/2000`;
 
-function harness() {
-  const state = { dongleId: DONGLE, router: { location: { pathname: '/' } } };
+function harness(initialPathname = '/') {
+  const state = { dongleId: DONGLE, router: { location: { pathname: initialPathname } } };
   const dispatch = vi.fn(action => typeof action === 'function' ? action(dispatch, () => state) : action);
   const next = vi.fn(action => { if (action.type === LOCATION_CHANGE) state.router.location = action.payload.location; });
   const middleware = onHistoryMiddleware({ dispatch, getState: () => state })(next);
-  const visit = (pathname, search = '', type = 'PUSH') => middleware({ type: LOCATION_CHANGE, payload: { action: type, location: { pathname, search } } });
+  const visit = (pathname, search = '', type = 'PUSH', hash = '') => middleware({
+    type: LOCATION_CHANGE,
+    payload: { action: type, location: { pathname, search, ...(hash ? { hash } : {}) } },
+  });
   return { dispatch, next, middleware, visit };
 }
 
@@ -45,6 +50,26 @@ describe('location reconciliation', () => {
     const { visit, dispatch } = harness();
     visit(`/1111bbbb1111bbbb/${LOG}`);
     expect(dispatch.mock.calls.filter(([action]) => typeof action !== 'function').map(([action]) => action.type)).toEqual(['setDevice', 'selectRoute', 'checkRoutesData']);
+  });
+
+  it.each([
+    ['/', '/demo', 'real to demo'],
+    ['/demo', `/${DONGLE}`, 'demo to real'],
+    ['/', '/deadbeefdeadbeef', 'real to synthetic demo device'],
+  ])('reloads when crossing backend from %s to %s (%s)', (initialPathname, pathname) => {
+    const { visit } = harness(initialPathname);
+    visit(pathname, '?keep=yes', 'PUSH', '#position');
+    expect(hardNavigate).toHaveBeenCalledWith(`${pathname}?keep=yes#position`);
+    expect(actions.setDevice).not.toHaveBeenCalled();
+    expect(actions.selectRoute).not.toHaveBeenCalled();
+    expect(actions.checkRoutesData).not.toHaveBeenCalled();
+  });
+
+  it('keeps navigation within the demo backend in the SPA', () => {
+    const { visit } = harness('/demo');
+    visit('/deadbeefdeadbeef');
+    expect(hardNavigate).not.toHaveBeenCalled();
+    expect(actions.checkRoutesData).toHaveBeenCalledOnce();
   });
 
   it('replaces legacy links and preserves query arguments', async () => {

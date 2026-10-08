@@ -1,7 +1,8 @@
 import { LOCATION_CHANGE, replace } from 'connected-react-router';
 import { PAGES, parseUrl, urlFor } from '../url';
 import { checkRoutesData, selectRoute, setDevice } from './index';
-import { api } from '../api/backend';
+import { api, selectBackendType } from '../api/backend';
+import { hardNavigate } from '../utils/navigation';
 
 function reconcileUrl(url) {
   return (dispatch, getState) => {
@@ -29,13 +30,20 @@ function resolveLegacyRange({ dongleId, legacyRange }, isCurrent) {
   };
 }
 
-export const onHistoryMiddleware = ({ dispatch }) => {
+export const onHistoryMiddleware = ({ dispatch, getState }) => {
+  // The API backend is chosen once when the app starts. A URL for the other
+  // backend needs a fresh app, or client navigation and a reload disagree.
+  const backendType = selectBackendType(getState().router.location.pathname);
   let previousPathname;
   let revision = 0;
   return (next) => (action) => {
     const result = next(action);
     if (action.type !== LOCATION_CHANGE) return result;
-    const { pathname } = action.payload.location;
+    const { pathname, search = '', hash = '' } = action.payload.location;
+    if (selectBackendType(pathname) !== backendType) {
+      hardNavigate(`${pathname}${search}${hash}`);
+      return result;
+    }
     // Dialog-only changes cannot reset playback or start duplicate lookups.
     if (pathname === previousPathname) return result;
     previousPathname = pathname;

@@ -39,6 +39,10 @@ navigate with `openPage`, `openDrive`, or `openDialog`. The history middleware i
 unchanged selections retain their data and playback. Pages and dialogs are read
 from `selectUrl(state)`, not parallel Redux flags.
 
+The demo and real API backends are selected when the app starts. Navigating
+between their URL spaces reloads the app so a direct link and an in-app visit
+use the same backend.
+
 Dialogs overlay their current page with `?dialog=...`. Settings, unpair, and settings
 uploads can also specify `&device=<dongleId>`, independently of the underlying drive.
 Other dialog names are `add-device`, `filter`, `uploads`, `cancel-prime`, and
